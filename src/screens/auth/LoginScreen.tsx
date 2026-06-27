@@ -1,0 +1,24 @@
+import { useEffect, useRef, useState } from 'react';
+import { KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useTranslation } from 'react-i18next';
+import { AppButton } from '../../components/AppButton';
+import { COLORS, FONT_SIZE, RADIUS, SPACING } from '../../theme';
+import { useAuthStore } from '../../stores/authStore';
+
+export default function LoginScreen() {
+  const { t } = useTranslation(); const { sendOtp, verifyOtp } = useAuthStore();
+  const [phone, setPhone] = useState(''); const [digits, setDigits] = useState(['', '', '', '', '', '']);
+  const [step, setStep] = useState<'phone' | 'code'>('phone'); const [loading, setLoading] = useState(false); const [error, setError] = useState(''); const [seconds, setSeconds] = useState(0);
+  const refs = useRef<Array<TextInput | null>>([]);
+  useEffect(() => { if (seconds > 0) { const timer = setTimeout(() => setSeconds(seconds - 1), 1000); return () => clearTimeout(timer); } }, [seconds]);
+  const formattedPhone = () => { const value = phone.replace(/\D/g, ''); return value.startsWith('20') ? `+${value}` : value.startsWith('0') ? `+20${value.slice(1)}` : `+20${value}`; };
+  const send = async () => { setError(''); if (formattedPhone().length !== 13) return setError('Enter a valid Egyptian phone number'); setLoading(true); try { await sendOtp(formattedPhone()); setStep('code'); setSeconds(60); } catch (e: any) { setError(e.response?.data?.message ?? 'Could not send code'); } finally { setLoading(false); } };
+  const verify = async (code = digits.join('')) => { if (code.length !== 6) return; setLoading(true); setError(''); try { await verifyOtp(formattedPhone(), code); } catch (e: any) { setError(e.message === 'NOT_PASSENGER' ? t('auth.invalidRole') : e.response?.data?.message ?? 'Invalid verification code'); setDigits(['', '', '', '', '', '']); } finally { setLoading(false); } };
+  const updateDigit = (value: string, index: number) => { const next = [...digits]; next[index] = value.slice(-1); setDigits(next); if (value && index < 5) refs.current[index + 1]?.focus(); if (next.every(Boolean)) void verify(next.join('')); };
+  return <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}><View style={styles.content}><View style={styles.logo}><Text style={styles.logoText}>SM</Text></View><Text style={styles.title}>{t('auth.title')}</Text><Text style={styles.subtitle}>{step === 'phone' ? t('auth.phone') : t('auth.code')}</Text>
+    {step === 'phone' ? <View style={styles.phoneRow}><Text style={styles.prefix}>+20</Text><TextInput style={styles.phoneInput} value={phone} onChangeText={setPhone} keyboardType="phone-pad" placeholder="100 123 4567" maxLength={11} /></View> : <View style={styles.codeRow}>{digits.map((digit, index) => <TextInput key={index} ref={(node) => { refs.current[index] = node; }} style={styles.codeInput} value={digit} onChangeText={(value) => updateDigit(value, index)} keyboardType="number-pad" maxLength={1} />)}</View>}
+    {error ? <Text style={styles.error}>{error}</Text> : null}<AppButton label={step === 'phone' ? t('auth.send') : t('auth.verify')} loading={loading} onPress={() => step === 'phone' ? void send() : void verify()} />
+    {step === 'code' ? <AppButton style={styles.secondary} variant="ghost" label={seconds ? `Resend in ${seconds}s` : 'Resend code'} disabled={seconds > 0} onPress={() => void send()} /> : null}
+  </View></KeyboardAvoidingView>;
+}
+const styles = StyleSheet.create({ container: { flex: 1, backgroundColor: COLORS.background, justifyContent: 'center' }, content: { padding: SPACING.xxl }, logo: { width: 72, height: 72, borderRadius: 24, backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center', alignSelf: 'center', marginBottom: SPACING.xl }, logoText: { fontSize: 26, fontWeight: '900' }, title: { fontSize: FONT_SIZE.xxxl, fontWeight: '800', textAlign: 'center', color: COLORS.text }, subtitle: { fontSize: FONT_SIZE.md, color: COLORS.textSecondary, textAlign: 'center', marginTop: SPACING.sm, marginBottom: SPACING.xxl }, phoneRow: { flexDirection: 'row', backgroundColor: COLORS.card, borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.lg, marginBottom: SPACING.lg }, prefix: { padding: SPACING.lg, fontWeight: '700', borderRightWidth: 1, borderRightColor: COLORS.border }, phoneInput: { flex: 1, padding: SPACING.lg, fontSize: FONT_SIZE.lg }, codeRow: { flexDirection: 'row', gap: SPACING.sm, marginBottom: SPACING.lg }, codeInput: { flex: 1, aspectRatio: 0.8, textAlign: 'center', backgroundColor: COLORS.card, borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.md, fontSize: FONT_SIZE.xxl, fontWeight: '800' }, error: { color: COLORS.danger, textAlign: 'center', marginBottom: SPACING.md }, secondary: { marginTop: SPACING.sm } });
