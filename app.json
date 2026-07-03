@@ -57,7 +57,8 @@
           "icon": "./assets/adaptive-icon.png",
           "color": "#F4C400"
         }
-      ]
+      ],
+      "expo-font"
     ],
     "extra": {
       "router": {},
