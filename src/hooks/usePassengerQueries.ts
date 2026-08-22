@@ -5,6 +5,8 @@ export const useBookings = () => useQuery({ queryKey: ['bookings'], queryFn: ser
 export const useBooking = (id: string) => useQuery({ queryKey: ['booking', id], queryFn: () => service.getBooking(id), enabled: Boolean(id) });
 export const useNotifications = () => useQuery({ queryKey: ['notifications'], queryFn: service.getNotifications, refetchInterval: 60_000 });
 export const useWalletTransactions = () => useQuery({ queryKey: ['wallet-transactions'], queryFn: service.getWalletTransactions });
+export const useTripTracking = (bookingId: string) => useQuery({ queryKey: ['tracking', bookingId], queryFn: () => service.getTripTracking(bookingId), enabled: Boolean(bookingId), refetchInterval: 20_000 });
+export const useOutstanding = () => useQuery({ queryKey: ['outstanding'], queryFn: service.getOutstanding });
 export function useBookingActions() {
   const client = useQueryClient();
   const refresh = async () => { await client.invalidateQueries({ queryKey: ['bookings'] }); };

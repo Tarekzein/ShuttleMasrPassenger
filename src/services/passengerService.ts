@@ -1,5 +1,5 @@
 import api from '../config/api';
-import type { AppNotification, Booking, Coordinates, PaymentMethod, SearchResult, User, WalletTransaction } from '../types/passenger';
+import type { AppNotification, Booking, Coordinates, PaymentMethod, SearchResult, TripTracking, OutstandingResponse, User, WalletTransaction } from '../types/passenger';
 
 export const getProfile = async () => (await api.get<User>('/users/me')).data;
 export const updateProfile = async (body: { name?: string; email?: string }) => (await api.patch<User>('/users/me', body)).data;
@@ -15,5 +15,7 @@ export const getNotifications = async () => (await api.get<AppNotification[]>('/
 export const markNotificationRead = async (id: string) => (await api.patch(`/notifications/${id}/read`)).data;
 export const markAllNotificationsRead = async () => (await api.patch('/notifications/mark-all-read')).data;
 export const getWalletTransactions = async () => (await api.get<WalletTransaction[]>('/payments/wallet/transactions')).data;
+export const getTripTracking = async (bookingId: string) => (await api.get<TripTracking>(`/bookings/${bookingId}/tracking`)).data;
+export const getOutstanding = async () => (await api.get<OutstandingResponse>('/users/me/outstanding')).data;
 export const registerPushToken = async (token: string, platform: 'android' | 'ios') => (await api.post('/notifications/push-tokens', { token, platform })).data;
 export const unregisterPushToken = async (token: string) => (await api.delete(`/notifications/push-tokens/${encodeURIComponent(token)}`)).data;

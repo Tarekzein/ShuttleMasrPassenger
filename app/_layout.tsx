@@ -23,10 +23,13 @@ export default function RootLayout() {
   }, [isAuthenticated, isLoading, ready, segments]);
   useEffect(() => { if (isAuthenticated) void enablePushNotifications(); }, [isAuthenticated]);
   useEffect(() => Notifications.addNotificationResponseReceivedListener((response) => {
-    const id = response.notification.request.content.data?.bookingId;
-    if (typeof id === 'string') router.push(`/booking/${id}`);
+    const data = response.notification.request.content.data as { bookingId?: string; screen?: string } | undefined;
+    const id = data?.bookingId;
+    if (typeof id !== 'string') return;
+    if (data?.screen === 'tracking') router.push(`/tracking/${id}`);
+    else router.push(`/booking/${id}`);
   }).remove, []);
   if (!ready || isLoading) return <View style={styles.loading}><ActivityIndicator size="large" color={COLORS.primary} /></View>;
-  return <QueryClientProvider client={queryClient}><StatusBar style="dark" /><Stack screenOptions={{ headerShown: false }}><Stack.Screen name="login" /><Stack.Screen name="(tabs)" /><Stack.Screen name="trip/[id]" /><Stack.Screen name="booking/[id]" /></Stack></QueryClientProvider>;
+  return <QueryClientProvider client={queryClient}><StatusBar style="dark" /><Stack screenOptions={{ headerShown: false }}><Stack.Screen name="login" /><Stack.Screen name="(tabs)" /><Stack.Screen name="trip/[id]" /><Stack.Screen name="booking/[id]" /><Stack.Screen name="tracking/[bookingId]" options={{ headerShown: true }} /></Stack></QueryClientProvider>;
 }
 const styles = StyleSheet.create({ loading: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.background } });

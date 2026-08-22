@@ -21,11 +21,40 @@ export interface SearchResult {
 }
 export interface BookingSeat { id: string; seatNumber?: string | null; status: string; isBoarded: boolean }
 export interface Payment { id: string; method: PaymentMethod | string; status: string; amount: number | string }
+export interface NoShowChargeSummary { id: string; tripId: string; amount: number | string; reason: string; status: string }
 export interface Booking {
-  id: string; seats: number; totalFare: number | string; status: BookingStatus; paymentMethod: PaymentMethod;
+  id: string; seats: number; totalFare: number | string; outstandingAmount?: number | string; status: BookingStatus; paymentMethod: PaymentMethod;
   createdAt: string; pickupStop: Stop; dropoffStop: Stop; bookingSeats: BookingSeat[]; payment?: Payment | null;
   review?: { id: string; rating: number; comment?: string | null; tags: string[] } | null;
+  settledNoShowCharges?: NoShowChargeSummary[];
   trip: Trip & { line: SearchResult['line']; driver?: SearchResult['line']['driver']; vehicle?: Vehicle | null };
 }
 export interface WalletTransaction { id: string; type: 'CREDIT' | 'DEBIT'; amount: number | string; description?: string | null; createdAt: string }
-export interface AppNotification { id: string; title: string; titleAr?: string | null; body: string; bodyAr?: string | null; type?: string | null; payload?: { bookingId?: string } | null; isRead: boolean; createdAt: string }
+export interface AppNotification { id: string; title: string; titleAr?: string | null; body: string; bodyAr?: string | null; type?: string | null; payload?: { bookingId?: string; tripId?: string; screen?: string } | null; isRead: boolean; createdAt: string }
+
+export interface TrackingDriverLocation { lat: number; lng: number; heading?: number | null; speed?: number | null; at?: string | null }
+export interface TrackingStop {
+  stopId: string; stopOrder: number; status: 'PENDING' | 'ARRIVED' | 'WAITING' | 'COMPLETED' | 'SKIPPED';
+  arrivedAt?: string | null; completedAt?: string | null;
+  name?: string | null; nameAr?: string | null; lat?: number; lng?: number; isPickup: boolean; isDropoff: boolean;
+}
+export interface TripTracking {
+  booking: { id: string; status: BookingStatus; seats: number; outstandingAmount: number | string };
+  trip: { id: string; status: TripStatus; departureTime: string; startedAt?: string | null };
+  trackingOpen: boolean;
+  etaTarget: 'PICKUP' | 'DESTINATION';
+  message?: string | null;
+  driverLocation?: TrackingDriverLocation | null;
+  driver?: { name: string; avatarUrl?: string | null; phone?: string | null } | null;
+  vehicle?: Vehicle | null;
+  pickupStop: Stop; dropoffStop: Stop;
+  stops: TrackingStop[];
+  routeCoordinates: Array<{ latitude: number; longitude: number }>;
+  outstandingCharges: Array<{ tripRef: string; amount: number | string; reason: string; status: string }>;
+}
+export interface OutstandingCharge {
+  id: string; tripRef: string; tripId: string; bookingId: string; missedTripDate?: string | null;
+  lineName?: string | null; lineNameAr?: string | null; amount: number | string; reason: string; status: string;
+  settledBookingId?: string | null; createdAt: string;
+}
+export interface OutstandingResponse { outstandingBalance: number | string; charges: OutstandingCharge[] }

@@ -48,9 +48,10 @@ function StatusPill({ status }: { status: string }) {
   );
 }
 
-function BookingCard({ booking, onPress }: { booking: Booking; onPress: () => void }) {
+function BookingCard({ booking, onPress, onTrack }: { booking: Booking; onPress: () => void; onTrack: () => void }) {
   const seatLabel = `${booking.seats} seat${booking.seats > 1 ? 's' : ''}`;
   const paymentLabel = `${booking.payment?.status ?? 'PENDING'} - ${booking.payment?.method ?? booking.paymentMethod}`;
+  const live = ['BOARDING', 'IN_PROGRESS'].includes(booking.trip.status);
 
   return (
     <AppCard onPress={onPress} style={styles.bookingCard}>
@@ -87,6 +88,12 @@ function BookingCard({ booking, onPress }: { booking: Booking; onPress: () => vo
         <View style={styles.metaPill}><Text style={styles.metaPillText}>{Number(booking.totalFare).toFixed(0)} EGP</Text></View>
         <View style={styles.metaPill}><Text style={styles.metaPillText}>{paymentLabel}</Text></View>
       </View>
+
+      {live ? (
+        <TouchableOpacity style={styles.trackBtn} onPress={onTrack}>
+          <Text style={styles.trackBtnText}>Track your ride</Text>
+        </TouchableOpacity>
+      ) : null}
     </AppCard>
   );
 }
@@ -163,6 +170,7 @@ export default function BookingsScreen() {
                 key={booking.id}
                 booking={booking}
                 onPress={() => router.push(`/booking/${booking.id}`)}
+                onTrack={() => router.push(`/tracking/${booking.id}`)}
               />
             ))
           ) : (
@@ -215,4 +223,6 @@ const styles = StyleSheet.create({
   metaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm, marginTop: SPACING.md },
   metaPill: { backgroundColor: COLORS.card, borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.full, paddingVertical: SPACING.xs, paddingHorizontal: SPACING.md },
   metaPillText: { color: COLORS.textSecondary, fontWeight: '800', fontSize: FONT_SIZE.sm },
+  trackBtn: { marginTop: SPACING.md, backgroundColor: COLORS.primary, borderRadius: RADIUS.full, paddingVertical: SPACING.sm, alignItems: 'center' },
+  trackBtnText: { color: COLORS.text, fontWeight: '900' },
 });
