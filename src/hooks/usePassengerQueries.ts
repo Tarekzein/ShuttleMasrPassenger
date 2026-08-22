@@ -1,11 +1,18 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import * as service from '../services/passengerService';
+import { trackingFallbackInterval } from '../utils/trackingContract';
 
 export const useBookings = () => useQuery({ queryKey: ['bookings'], queryFn: service.getBookings });
 export const useBooking = (id: string) => useQuery({ queryKey: ['booking', id], queryFn: () => service.getBooking(id), enabled: Boolean(id) });
 export const useNotifications = () => useQuery({ queryKey: ['notifications'], queryFn: service.getNotifications, refetchInterval: 60_000 });
 export const useWalletTransactions = () => useQuery({ queryKey: ['wallet-transactions'], queryFn: service.getWalletTransactions });
-export const useTripTracking = (bookingId: string) => useQuery({ queryKey: ['tracking', bookingId], queryFn: () => service.getTripTracking(bookingId), enabled: Boolean(bookingId), refetchInterval: 20_000 });
+export const useTripTracking = (bookingId: string, disconnectedFallback = false) => useQuery({
+  queryKey: ['tracking', bookingId],
+  queryFn: () => service.getTripTracking(bookingId),
+  enabled: Boolean(bookingId),
+  refetchOnMount: 'always',
+  refetchInterval: (query) => trackingFallbackInterval(query.state.data, disconnectedFallback),
+});
 export const useOutstanding = () => useQuery({ queryKey: ['outstanding'], queryFn: service.getOutstanding });
 export function useBookingActions() {
   const client = useQueryClient();

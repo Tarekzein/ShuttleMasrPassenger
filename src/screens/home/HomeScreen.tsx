@@ -10,7 +10,6 @@ import {
 import MapView, { Marker, Region } from 'react-native-maps';
 import * as Location from 'expo-location';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import {
@@ -19,18 +18,20 @@ import {
 } from 'react-native-google-places-autocomplete';
 import { AppButton } from '../../components/AppButton';
 import { AppCard } from '../../components/AppCard';
+import { ActiveTripBanner } from '../../components/ActiveTripBanner';
 import { COLORS, FONT_SIZE, RADIUS, SHADOWS, SPACING } from '../../theme';
 import { searchTrips } from '../../services/passengerService';
+import { useBookings } from '../../hooks/usePassengerQueries';
 import type { Coordinates, SearchResult, Trip } from '../../types/passenger';
+import { isBookingTrackingEligible } from '../../utils/trackingContract';
 
 type PointKind = 'origin' | 'destination';
 
 const CAIRO = { latitude: 30.0444, longitude: 31.2357 };
 const DESTINATION = { latitude: 30.0131, longitude: 31.2089 };
 const POINTS_KEY = 'passenger_search_points';
-const GOOGLE_MAPS_API_KEY =
-  process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY ||
-  String(Constants.expoConfig?.extra?.googleMapsApiKey ?? '');
+const GOOGLE_PLACES_API_KEY =
+  process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY ?? '';
 
 const compactTime = (value: string) =>
   new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -48,6 +49,7 @@ export default function HomeScreen() {
   const { t } = useTranslation();
   const router = useRouter();
   const map = useRef<MapView>(null);
+  const bookingsQuery = useBookings();
   const originSearch = useRef<GooglePlacesAutocompleteRef>(null);
   const destinationSearch = useRef<GooglePlacesAutocompleteRef>(null);
 
@@ -64,6 +66,13 @@ export default function HomeScreen() {
   const region: Region = useMemo(
     () => ({ ...origin, latitudeDelta: 0.18, longitudeDelta: 0.18 }),
     [origin],
+  );
+  const activeBooking = useMemo(
+    () =>
+      [...(bookingsQuery.data ?? [])]
+        .filter(isBookingTrackingEligible)
+        .sort((a, b) => new Date(a.trip.departureTime).getTime() - new Date(b.trip.departureTime).getTime())[0],
+    [bookingsQuery.data],
   );
 
   const persistPoints = async (nextOrigin = origin, nextDestination = destination) => {
@@ -184,6 +193,13 @@ export default function HomeScreen() {
           <Text style={styles.subtitle}>Search like a ride app, then ShuttleMasr matches you to real route stops.</Text>
         </View>
 
+        {activeBooking ? (
+          <ActiveTripBanner
+            booking={activeBooking}
+            onPress={() => router.push(`/tracking/${activeBooking.id}`)}
+          />
+        ) : null}
+
         <View style={styles.searchCard}>
           <View style={styles.pointTabs}>
             {(['origin', 'destination'] as PointKind[]).map((kind) => (
@@ -215,7 +231,7 @@ export default function HomeScreen() {
               onFail={(error) => setMessage(error?.message ?? String(error ?? 'Google Places search failed'))}
               onNotFound={() => setMessage('No pickup places found. Try a more specific location.')}
               query={{
-                key: GOOGLE_MAPS_API_KEY,
+                key: GOOGLE_PLACES_API_KEY,
                 language: 'en',
                 components: 'country:eg',
                 types: 'geocode',
@@ -246,7 +262,7 @@ export default function HomeScreen() {
               onFail={(error) => setMessage(error?.message ?? String(error ?? 'Google Places search failed'))}
               onNotFound={() => setMessage('No destination places found. Try a more specific location.')}
               query={{
-                key: GOOGLE_MAPS_API_KEY,
+                key: GOOGLE_PLACES_API_KEY,
                 language: 'en',
                 components: 'country:eg',
                 types: 'geocode',

@@ -7,7 +7,6 @@ module.exports = {
   moduleNameMapper: {
     '^expo-constants$': '<rootDir>/src/__mocks__/expo-constants.ts',
     '^expo-secure-store$': '<rootDir>/src/__mocks__/empty.ts',
-    '^socket.io-client$': '<rootDir>/src/__mocks__/empty.ts',
   },
   transform: { '^.+\\.ts$': ['ts-jest', { tsconfig: { esModuleInterop: true, strict: false } }] },
 };

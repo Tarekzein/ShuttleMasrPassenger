@@ -28,3 +28,9 @@ export function bearing(from: LatLng, to: LatLng): number {
     Math.sin(toRad(from.latitude)) * Math.cos(toRad(to.latitude)) * Math.cos(dLng);
   return (toDeg(Math.atan2(y, x)) + 360) % 360;
 }
+
+/** Returns an unwrapped target that turns through the shortest arc. */
+export function shortestHeadingTarget(current: number, desired: number): number {
+  const delta = ((desired - current + 540) % 360) - 180;
+  return current + delta;
+}

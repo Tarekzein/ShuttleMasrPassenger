@@ -1,4 +1,4 @@
-import { interpolateLatLng, bearing } from './markerAnimation';
+import { interpolateLatLng, bearing, shortestHeadingTarget } from './markerAnimation';
 
 describe('markerAnimation (smooth shuttle marker)', () => {
   const a = { latitude: 30.0, longitude: 31.0 };
@@ -22,5 +22,10 @@ describe('markerAnimation (smooth shuttle marker)', () => {
     // Heading north-east → roughly between 0 and 90 degrees.
     expect(brg).toBeGreaterThan(0);
     expect(brg).toBeLessThan(90);
+  });
+
+  it('rotates across north using the shortest heading arc', () => {
+    expect(shortestHeadingTarget(350, 10)).toBe(370);
+    expect(shortestHeadingTarget(10, 350)).toBe(-10);
   });
 });

@@ -26,6 +26,7 @@ function getBaseUrl(): string {
 }
 
 export const API_BASE_URL = getBaseUrl();
+export const API_V2_BASE_URL = API_BASE_URL.replace(/\/api\/v1\/?$/, '/api/v2');
 let unauthorizedHandler: (() => void) | undefined;
 
 export function setUnauthorizedHandler(handler: () => void) {

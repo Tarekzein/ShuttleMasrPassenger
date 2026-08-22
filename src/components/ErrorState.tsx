@@ -6,15 +6,18 @@ import { normalizeApiError } from '../utils/apiError';
 interface ErrorStateProps {
   error: unknown;
   onRetry?: () => void;
+  title?: string;
+  message?: string;
+  retryLabel?: string;
 }
 
-export function ErrorState({ error, onRetry }: ErrorStateProps) {
+export function ErrorState({ error, onRetry, title, message, retryLabel }: ErrorStateProps) {
   const normalized = normalizeApiError(error, 'Unable to load data');
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Something went wrong</Text>
-      <Text style={styles.message}>{normalized.message}</Text>
-      {onRetry ? <AppButton label="Retry" size="sm" onPress={onRetry} style={styles.button} /> : null}
+    <View style={styles.container} accessibilityRole="alert" accessibilityLiveRegion="polite">
+      <Text style={styles.title}>{title ?? 'Something went wrong'}</Text>
+      <Text style={styles.message}>{message ?? normalized.message}</Text>
+      {onRetry ? <AppButton label={retryLabel ?? 'Retry'} size="sm" onPress={onRetry} style={styles.button} /> : null}
     </View>
   );
 }
