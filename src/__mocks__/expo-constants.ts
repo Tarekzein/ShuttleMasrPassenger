@@ -1,1 +1,1 @@
-export default { expoConfig: { extra: { googleMapsApiKey: 'TEST' } } } as any;
+export default { expoConfig: { extra: {} } } as any;

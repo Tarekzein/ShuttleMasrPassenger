@@ -9,6 +9,7 @@ import { LoadingScreen } from '../../components/LoadingScreen';
 import { COLORS, FONT_SIZE, RADIUS, SHADOWS, SPACING } from '../../theme';
 import { useBookings } from '../../hooks/usePassengerQueries';
 import type { Booking } from '../../types/passenger';
+import { isBookingTrackingEligible } from '../../utils/trackingContract';
 
 type Filter = 'upcoming' | 'active' | 'completed' | 'cancelled';
 
@@ -31,11 +32,12 @@ const formatTime = (value: string) =>
 function matchesFilter(booking: Booking, filter: Filter, now: number) {
   if (filter === 'cancelled') return ['CANCELLED', 'REFUNDED'].includes(booking.status);
   if (filter === 'completed') return booking.status === 'COMPLETED';
-  if (filter === 'active') return ['BOARDING', 'IN_PROGRESS'].includes(booking.trip.status);
+  if (filter === 'active') return isBookingTrackingEligible(booking);
   return (
     booking.status === 'CONFIRMED' &&
     new Date(booking.trip.departureTime).getTime() > now &&
-    booking.trip.status === 'SCHEDULED'
+    booking.trip.status === 'SCHEDULED' &&
+    !isBookingTrackingEligible(booking)
   );
 }
 
@@ -49,9 +51,10 @@ function StatusPill({ status }: { status: string }) {
 }
 
 function BookingCard({ booking, onPress, onTrack }: { booking: Booking; onPress: () => void; onTrack: () => void }) {
+  const { t } = useTranslation();
   const seatLabel = `${booking.seats} seat${booking.seats > 1 ? 's' : ''}`;
   const paymentLabel = `${booking.payment?.status ?? 'PENDING'} - ${booking.payment?.method ?? booking.paymentMethod}`;
-  const live = ['BOARDING', 'IN_PROGRESS'].includes(booking.trip.status);
+  const live = isBookingTrackingEligible(booking);
 
   return (
     <AppCard onPress={onPress} style={styles.bookingCard}>
@@ -90,8 +93,16 @@ function BookingCard({ booking, onPress, onTrack }: { booking: Booking; onPress:
       </View>
 
       {live ? (
-        <TouchableOpacity style={styles.trackBtn} onPress={onTrack}>
-          <Text style={styles.trackBtnText}>Track your ride</Text>
+        <TouchableOpacity
+          style={styles.trackBtn}
+          onPress={(event) => {
+            event.stopPropagation();
+            onTrack();
+          }}
+          accessibilityRole="button"
+          accessibilityLabel={t('tracking.resume')}
+        >
+          <Text style={styles.trackBtnText}>{t('tracking.resume')}</Text>
         </TouchableOpacity>
       ) : null}
     </AppCard>
@@ -223,6 +234,6 @@ const styles = StyleSheet.create({
   metaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm, marginTop: SPACING.md },
   metaPill: { backgroundColor: COLORS.card, borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.full, paddingVertical: SPACING.xs, paddingHorizontal: SPACING.md },
   metaPillText: { color: COLORS.textSecondary, fontWeight: '800', fontSize: FONT_SIZE.sm },
-  trackBtn: { marginTop: SPACING.md, backgroundColor: COLORS.primary, borderRadius: RADIUS.full, paddingVertical: SPACING.sm, alignItems: 'center' },
+  trackBtn: { marginTop: SPACING.md, minHeight: 44, backgroundColor: COLORS.primary, borderRadius: RADIUS.full, paddingVertical: SPACING.sm, alignItems: 'center', justifyContent: 'center' },
   trackBtnText: { color: COLORS.text, fontWeight: '900' },
 });
