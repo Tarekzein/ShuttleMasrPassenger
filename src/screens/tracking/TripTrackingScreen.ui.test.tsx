@@ -106,6 +106,71 @@ describe('TripTrackingScreen', () => {
     expect(queryByTestId('driver-marker')).toBeNull();
   });
 
+  it('explains a completed trip with an outcome card instead of the live hero', () => {
+    mockUseTracking.mockReturnValue({ data: baseData, isLoading: false, isError: false, refetch: jest.fn() });
+    const { getByText, queryByText } = render(<TripTrackingScreen />);
+    expect(getByText('tracking.outcome.COMPLETED.title')).toBeTruthy();
+    expect(getByText('tracking.outcome.COMPLETED.body')).toBeTruthy();
+    // A completed trip owes no refund, and the live status hero is gone.
+    expect(queryByText('tracking.outcome.refundNote')).toBeNull();
+    expect(queryByText('tracking.status')).toBeNull();
+  });
+
+  it('tells a cancelled passenger that a refund is on the way', () => {
+    mockUseTracking.mockReturnValue({
+      data: {
+        ...baseData,
+        trip: { ...baseData.trip, legacyStatus: 'CANCELLED', phase: 'CANCELLED', completedAt: null },
+        passenger: { ...baseData.passenger, bookingStatus: 'CANCELLED', phase: 'CANCELLED' },
+        stops: [
+          { stopId: 's1', name: 'Maadi', nameAr: 'المعادي', phase: 'PENDING', isPickup: true, isDropoff: false, lat: 30, lng: 31 },
+          { stopId: 's2', name: 'Nasr City', nameAr: 'مدينة نصر', phase: 'PENDING', isPickup: false, isDropoff: true, lat: 30.1, lng: 31.1 },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+      refetch: jest.fn(),
+    });
+    const { getByText } = render(<TripTrackingScreen />);
+    expect(getByText('tracking.outcome.CANCELLED.title')).toBeTruthy();
+    expect(getByText('tracking.outcome.refundNote')).toBeTruthy();
+    expect(getByText('tracking.outcome.routeSummary')).toBeTruthy();
+  });
+
+  it('falls back to a generic ended outcome for an unmapped terminal phase', () => {
+    mockUseTracking.mockReturnValue({
+      data: {
+        ...baseData,
+        passenger: { ...baseData.passenger, bookingStatus: 'CONFIRMED', phase: 'DRIVER_EN_ROUTE' },
+      },
+      isLoading: false,
+      isError: false,
+      refetch: jest.fn(),
+    });
+    const { getByText } = render(<TripTrackingScreen />);
+    expect(getByText('tracking.outcome.ENDED.title')).toBeTruthy();
+  });
+
+  it('keeps the live status hero while the trip is still running', () => {
+    mockUseTracking.mockReturnValue({
+      data: {
+        ...baseData,
+        terminal: false,
+        tracking: { open: true, state: 'LIVE', lastSeenAt: '2026-08-22T18:00:00.000Z' },
+        trip: { ...baseData.trip, legacyStatus: 'IN_PROGRESS', phase: 'DRIVER_EN_ROUTE', completedAt: null },
+        passenger: { ...baseData.passenger, bookingStatus: 'CONFIRMED', phase: 'DRIVER_EN_ROUTE' },
+        message: null,
+      },
+      isLoading: false,
+      isError: false,
+      refetch: jest.fn(),
+    });
+    const { getByText, queryByText } = render(<TripTrackingScreen />);
+    expect(getByText('tracking.status')).toBeTruthy();
+    expect(queryByText('tracking.outcome.ENDED.title')).toBeNull();
+    expect(queryByText('tracking.outcome.COMPLETED.title')).toBeNull();
+  });
+
   it('shows the tracking surface from assignment without exposing precise location', () => {
     mockUseTracking.mockReturnValue({
       data: {

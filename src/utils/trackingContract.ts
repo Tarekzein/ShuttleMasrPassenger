@@ -1,5 +1,6 @@
 import type {
   Booking,
+  Coordinates,
   JourneyEventV2,
   PassengerJourneyPhase,
   PassengerSeatPhase,
@@ -377,12 +378,54 @@ function legacyStops(data: TripTracking): TrackingStopV2[] {
   return stops.sort((a, b) => a.stopOrder - b.stopOrder);
 }
 
+/** Decodes a Google encoded polyline without adding a runtime map dependency. */
+export function decodeEncodedPolyline(encoded: string | null | undefined): Coordinates[] {
+  if (!encoded) return [];
+  const coordinates: Coordinates[] = [];
+  let index = 0;
+  let latitude = 0;
+  let longitude = 0;
+
+  const nextDelta = (): number | null => {
+    let result = 0;
+    let shift = 0;
+    let byte = 0;
+    do {
+      if (index >= encoded.length || shift > 30) return null;
+      byte = encoded.charCodeAt(index++) - 63;
+      if (byte < 0 || byte > 63) return null;
+      result |= (byte & 0x1f) << shift;
+      shift += 5;
+    } while (byte >= 0x20);
+    return (result & 1) !== 0 ? ~(result >> 1) : result >> 1;
+  };
+
+  while (index < encoded.length) {
+    const latitudeDelta = nextDelta();
+    const longitudeDelta = nextDelta();
+    if (latitudeDelta == null || longitudeDelta == null) return [];
+    latitude += latitudeDelta;
+    longitude += longitudeDelta;
+    const point = { latitude: latitude / 1e5, longitude: longitude / 1e5 };
+    if (!isCoordinate(point)) return [];
+    coordinates.push(point);
+  }
+  return coordinates;
+}
+
 function normalizeRoute(route: TripTrackingV2['route']): TrackingRouteV2 {
   const source = route.routeSource ?? route.source ?? 'LINE_STOPS';
   const fallbackEta = route.etaToPickupSeconds ?? route.etaToDropoffSeconds ?? null;
+  const decodedCoordinates = source === 'DRIVER_NAVIGATION'
+    ? decodeEncodedPolyline(route.encodedPolyline)
+    : [];
   return {
     routeSource: source,
-    coordinates: Array.isArray(route.coordinates) ? route.coordinates : [],
+    // Prefer the encoded SDK route when supplied. Older rollout servers paired
+    // it with line-stop fallback coordinates, which are not the driven route.
+    coordinates: decodedCoordinates.length > 0
+      ? decodedCoordinates
+      : Array.isArray(route.coordinates) ? route.coordinates : [],
     encodedPolyline: route.encodedPolyline ?? null,
     routeRevision: Number.isFinite(route.routeRevision) ? route.routeRevision : 0,
     calculatedAt: route.calculatedAt ?? null,

@@ -30,6 +30,7 @@ import {
   acceptLocationUpdate,
   ageSeconds,
   classifyRevision,
+  decodeEncodedPolyline,
   isTripTrackingV2,
   normalizeTrackingSnapshot,
 } from '../../utils/trackingContract';
@@ -113,6 +114,7 @@ export default function TripTrackingScreen() {
   const trackingQuery = useTripTracking(id, disconnectedFallback);
   const data = trackingQuery.data;
   const [liveLocation, setLiveLocation] = useState<TrackingLocationV2 | null>(null);
+  const [mapMode, setMapMode] = useState<'overview' | 'follow' | 'free'>('overview');
   const [, setClockTick] = useState(0);
   const mapRef = useRef<MapView | null>(null);
   const snapshotRef = useRef<TrackingSnapshot | null>(null);
@@ -212,7 +214,13 @@ export default function TripTrackingScreen() {
       const routeRevision = event.navigation.routeRevision;
       if (routeRevision < currentRoute.routeRevision) return;
       const geometryChanged = routeRevision > currentRoute.routeRevision;
-      if (geometryChanged && !event.navigation.coordinates?.length) {
+      const decodedGeometry = geometryChanged
+        ? decodeEncodedPolyline(event.navigation.encodedPolyline)
+        : [];
+      const incomingGeometry = decodedGeometry.length > 0
+        ? decodedGeometry
+        : event.navigation.coordinates ?? [];
+      if (geometryChanged && incomingGeometry.length === 0) {
         refetchAuthoritative();
         return;
       }
@@ -223,9 +231,11 @@ export default function TripTrackingScreen() {
           ...currentRoute,
           routeSource: 'DRIVER_NAVIGATION',
           coordinates: geometryChanged
-            ? event.navigation.coordinates ?? currentRoute.coordinates
+            ? incomingGeometry
             : currentRoute.coordinates,
-          encodedPolyline: event.navigation.encodedPolyline,
+          encodedPolyline: geometryChanged
+            ? event.navigation.encodedPolyline
+            : currentRoute.encodedPolyline,
           routeRevision,
           calculatedAt: event.navigation.calculatedAt,
           remainingDistanceMeters: event.navigation.remainingDistanceMeters,
@@ -369,6 +379,49 @@ export default function TripTrackingScreen() {
     [liveLocation?.lat, liveLocation?.lng, pickup?.lat, pickup?.lng],
   );
 
+  const showRouteOverview = useCallback(() => {
+    const points = [...routeCoordinates];
+    if (liveLocation) {
+      points.push({ latitude: liveLocation.lat, longitude: liveLocation.lng });
+    }
+    if (points.length > 1) {
+      mapRef.current?.fitToCoordinates(points, {
+        edgePadding: { top: 60, right: 40, bottom: 60, left: 40 },
+        animated: true,
+      });
+    } else if (points.length === 1) {
+      mapRef.current?.animateCamera({ center: points[0], zoom: 16 }, { duration: 450 });
+    }
+    setMapMode('overview');
+  }, [liveLocation, routeCoordinates]);
+
+  const followShuttle = useCallback(() => {
+    if (!liveLocation) return;
+    mapRef.current?.animateCamera(
+      {
+        center: { latitude: liveLocation.lat, longitude: liveLocation.lng },
+        heading: liveLocation.heading ?? 0,
+        pitch: 42,
+        zoom: 17,
+      },
+      { duration: 450 },
+    );
+    setMapMode('follow');
+  }, [liveLocation]);
+
+  useEffect(() => {
+    if (mapMode !== 'follow' || !liveLocation) return;
+    mapRef.current?.animateCamera(
+      {
+        center: { latitude: liveLocation.lat, longitude: liveLocation.lng },
+        heading: liveLocation.heading ?? 0,
+        pitch: 42,
+        zoom: 17,
+      },
+      { duration: 350 },
+    );
+  }, [liveLocation, mapMode]);
+
   useEffect(() => {
     if (!data || data.terminal || routeCoordinates.length < 2) return;
     mapRef.current?.fitToCoordinates(routeCoordinates, {
@@ -402,6 +455,16 @@ export default function TripTrackingScreen() {
   );
   const etaDisplay = data.apiVersion === 2 ? v2Eta : null;
   const phaseLabel = t(`tracking.phase.${data.passenger.phase}`);
+  const terminalOutcome =
+    (['COMPLETED', 'CANCELLED', 'NO_SHOW'] as const).find(
+      (key) => key === data.passenger.phase,
+    ) ?? 'ENDED';
+  const outcomeGlyph =
+    terminalOutcome === 'COMPLETED' ? '✓' : terminalOutcome === 'NO_SHOW' ? '!' : '×';
+  const stopName = (stop: typeof pickup) =>
+    stop ? ((isAr ? stop.nameAr : stop.name) ?? stop.name ?? stop.nameAr) : null;
+  const pickupName = stopName(pickup);
+  const dropoffName = stopName(dropoff);
   const routeIsDriverNavigation = data.route.routeSource === 'DRIVER_NAVIGATION';
   const etaTarget = data.stops.find((stop) => stop.stopId === data.route.targetStopId);
   const etaTargetName = etaTarget
@@ -424,10 +487,23 @@ export default function TripTrackingScreen() {
 
   return (
     <View style={styles.container}>
-      <Stack.Screen options={{ headerTitle: t('tracking.title') }} />
+      <Stack.Screen
+        options={{
+          headerTitle: t('tracking.title'),
+          headerTitleAlign: 'center',
+          headerBackButtonDisplayMode: 'minimal',
+          headerShadowVisible: false,
+        }}
+      />
 
       {!data.terminal ? (
-        <MapView ref={mapRef} provider={MAP_PROVIDER} style={styles.map} initialRegion={initialRegion}>
+        <MapView
+          ref={mapRef}
+          provider={MAP_PROVIDER}
+          style={styles.map}
+          initialRegion={initialRegion}
+          onPanDrag={() => setMapMode('free')}
+        >
           {routeCoordinates.length > 1 ? (
             <Polyline coordinates={routeCoordinates} strokeColor={COLORS.primary} strokeWidth={5} />
           ) : null}
@@ -457,33 +533,144 @@ export default function TripTrackingScreen() {
         </MapView>
       ) : null}
 
-      <ScrollView style={styles.sheet} contentContainerStyle={styles.sheetContent}>
-        <View
-          style={[
-            styles.connectionBanner,
-            connection.tone === 'live'
-              ? styles.connectionLive
-              : connection.tone === 'warning'
-                ? styles.connectionWarning
-                : styles.connectionMuted,
-            rowDirection,
-          ]}
-          accessibilityLiveRegion="polite"
-          accessibilityRole="text"
-        >
-          <View style={styles.connectionDot} />
-          <Text style={[styles.connectionText, alignedText]}>{connection.label}</Text>
-        </View>
-
-        <AppCard>
-          <Text style={[styles.statusLabel, alignedText]}>{t('tracking.status')}</Text>
-          <Text style={[styles.statusValue, alignedText]}>{phaseLabel}</Text>
-          <Text style={[styles.meta, alignedText]}>{formatCairoDateTime(data.trip.departureTime, language)}</Text>
-          {data.message ? <Text style={[styles.message, alignedText]}>{data.message}</Text> : null}
-          {subscriptionErrorCode ? (
-            <Text style={[styles.warningText, alignedText]}>{t('tracking.subscriptionError')}</Text>
+      {!data.terminal ? (
+        <View style={[styles.mapControls, isAr && styles.mapControlsRtl]} pointerEvents="box-none">
+          {liveLocation ? (
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel={t('tracking.followShuttle')}
+              accessibilityState={{ selected: mapMode === 'follow' }}
+              hitSlop={6}
+              style={[styles.mapControl, mapMode === 'follow' && styles.mapControlActive]}
+              onPress={followShuttle}
+            >
+              <Text style={[styles.mapControlText, mapMode === 'follow' && styles.mapControlTextActive]}>
+                {t('tracking.followShuttle')}
+              </Text>
+            </TouchableOpacity>
           ) : null}
-        </AppCard>
+          {routeCoordinates.length > 0 ? (
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel={t('tracking.routeOverview')}
+              accessibilityState={{ selected: mapMode === 'overview' }}
+              hitSlop={6}
+              style={[styles.mapControl, mapMode === 'overview' && styles.mapControlActive]}
+              onPress={showRouteOverview}
+            >
+              <Text style={[styles.mapControlText, mapMode === 'overview' && styles.mapControlTextActive]}>
+                {t('tracking.routeOverview')}
+              </Text>
+            </TouchableOpacity>
+          ) : null}
+        </View>
+      ) : null}
+
+      <ScrollView style={[styles.sheet, data.terminal && styles.terminalSheet]} contentContainerStyle={styles.sheetContent}>
+        <View style={styles.sheetHandle} />
+        {data.terminal ? (
+          <View
+            style={[
+              styles.outcomeCard,
+              terminalOutcome === 'COMPLETED'
+                ? styles.outcomeCompleted
+                : terminalOutcome === 'NO_SHOW'
+                  ? styles.outcomeNoShow
+                  : styles.outcomeCancelled,
+            ]}
+            accessibilityLiveRegion="polite"
+          >
+            <View style={[styles.outcomeHeader, rowDirection]}>
+              <View
+                style={[
+                  styles.outcomeIcon,
+                  terminalOutcome === 'COMPLETED'
+                    ? styles.outcomeIconCompleted
+                    : terminalOutcome === 'NO_SHOW'
+                      ? styles.outcomeIconNoShow
+                      : styles.outcomeIconCancelled,
+                ]}
+                accessibilityElementsHidden
+              >
+                <Text style={styles.outcomeIconText}>{outcomeGlyph}</Text>
+              </View>
+              <View style={styles.outcomeHeaderText}>
+                <Text style={[styles.outcomeTitle, alignedText]}>
+                  {t(`tracking.outcome.${terminalOutcome}.title`)}
+                </Text>
+                <Text style={[styles.outcomeMeta, alignedText]}>
+                  {t('tracking.outcome.scheduledFor', {
+                    value: formatCairoDateTime(data.trip.departureTime, language),
+                  })}
+                </Text>
+              </View>
+            </View>
+            <Text style={[styles.outcomeBody, alignedText]}>
+              {t(`tracking.outcome.${terminalOutcome}.body`)}
+            </Text>
+            {pickupName && dropoffName ? (
+              <Text style={[styles.outcomeRoute, alignedText]} numberOfLines={2}>
+                {t('tracking.outcome.routeSummary', { from: pickupName, to: dropoffName })}
+              </Text>
+            ) : null}
+            {terminalOutcome === 'CANCELLED' ? (
+              <Text style={[styles.outcomeNote, alignedText]}>
+                {t('tracking.outcome.refundNote')}
+              </Text>
+            ) : null}
+            {data.message ? (
+              <Text style={[styles.outcomeNote, alignedText]}>{data.message}</Text>
+            ) : null}
+          </View>
+        ) : (
+          <View style={styles.tripHero}>
+            <View
+              style={[
+                styles.connectionBanner,
+                connection.tone === 'live'
+                  ? styles.connectionLive
+                  : connection.tone === 'warning'
+                    ? styles.connectionWarning
+                    : styles.connectionMuted,
+                rowDirection,
+              ]}
+              accessibilityLiveRegion="polite"
+              accessibilityRole="text"
+            >
+              <View style={[
+                styles.connectionDot,
+                connection.tone === 'live'
+                  ? styles.connectionDotLive
+                  : connection.tone === 'warning'
+                    ? styles.connectionDotWarning
+                    : null,
+              ]} />
+              <Text style={[styles.connectionText, alignedText]}>{connection.label}</Text>
+            </View>
+            <View style={[styles.heroStatusRow, rowDirection]}>
+              <View style={styles.heroStatusCopy}>
+                <Text style={[styles.statusLabel, alignedText]}>{t('tracking.status')}</Text>
+                <Text style={[styles.statusValue, alignedText]}>{phaseLabel}</Text>
+                <Text style={[styles.meta, alignedText]}>{formatCairoDateTime(data.trip.departureTime, language)}</Text>
+              </View>
+              <View style={styles.phaseIcon} accessibilityElementsHidden>
+                <Text style={styles.phaseIconText}>→</Text>
+              </View>
+            </View>
+            {etaTargetName ? (
+              <View style={[styles.nextStopPill, rowDirection]}>
+                <Text style={styles.nextStopIcon}>●</Text>
+                <Text style={[styles.nextStopText, alignedText]} numberOfLines={1}>
+                  {t('tracking.headingTo', { stop: etaTargetName })}
+                </Text>
+              </View>
+            ) : null}
+            {data.message ? <Text style={[styles.message, alignedText]}>{data.message}</Text> : null}
+            {subscriptionErrorCode ? (
+              <Text style={[styles.warningText, alignedText]}>{t('tracking.subscriptionError')}</Text>
+            ) : null}
+          </View>
+        )}
 
         {!data.terminal ? (
           <AppCard>
@@ -609,9 +796,60 @@ export default function TripTrackingScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
-  map: { height: '45%', width: '100%' },
-  sheet: { flex: 1 },
-  sheetContent: { padding: SPACING.lg, paddingBottom: 60, gap: SPACING.md },
+  map: { height: '43%', width: '100%' },
+  mapControls: {
+    position: 'absolute',
+    top: SPACING.md,
+    right: SPACING.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+  },
+  mapControlsRtl: { right: undefined, left: SPACING.md, flexDirection: 'row-reverse' },
+  mapControl: {
+    minHeight: 44,
+    justifyContent: 'center',
+    paddingHorizontal: SPACING.md,
+    borderRadius: RADIUS.full,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: 'rgba(255,255,255,0.96)',
+  },
+  mapControlActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  mapControlText: { color: COLORS.text, fontSize: FONT_SIZE.xs, fontWeight: '800' },
+  mapControlTextActive: { color: '#FFFFFF' },
+  sheet: {
+    flex: 1,
+    marginTop: -SPACING.xl,
+    borderTopLeftRadius: RADIUS.xxl,
+    borderTopRightRadius: RADIUS.xxl,
+    backgroundColor: COLORS.background,
+  },
+  terminalSheet: { marginTop: 0, borderTopLeftRadius: 0, borderTopRightRadius: 0 },
+  sheetContent: { paddingHorizontal: SPACING.lg, paddingTop: SPACING.sm, paddingBottom: 60, gap: SPACING.sm },
+  sheetHandle: { width: 44, height: 5, borderRadius: 3, backgroundColor: COLORS.border, alignSelf: 'center', marginBottom: SPACING.xs },
+  tripHero: { backgroundColor: COLORS.card, borderRadius: RADIUS.xxl, borderWidth: 1, borderColor: COLORS.border, padding: SPACING.lg },
+  outcomeCard: {
+    borderRadius: RADIUS.xxl,
+    borderWidth: 1,
+    padding: SPACING.lg,
+    gap: SPACING.sm,
+  },
+  outcomeCompleted: { backgroundColor: COLORS.successLight, borderColor: COLORS.success },
+  outcomeCancelled: { backgroundColor: COLORS.dangerLight, borderColor: COLORS.danger },
+  outcomeNoShow: { backgroundColor: COLORS.warningLight, borderColor: COLORS.warning },
+  outcomeHeader: { flexDirection: 'row', alignItems: 'center', gap: SPACING.md },
+  outcomeIcon: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
+  outcomeIconCompleted: { backgroundColor: COLORS.success },
+  outcomeIconCancelled: { backgroundColor: COLORS.danger },
+  outcomeIconNoShow: { backgroundColor: COLORS.warning },
+  outcomeIconText: { color: '#FFFFFF', fontSize: FONT_SIZE.xl, fontWeight: '900' },
+  outcomeHeaderText: { flex: 1 },
+  outcomeTitle: { color: COLORS.text, fontSize: FONT_SIZE.lg, fontWeight: '900' },
+  outcomeMeta: { color: COLORS.textSecondary, fontSize: FONT_SIZE.xs, marginTop: 2 },
+  outcomeBody: { color: COLORS.text, lineHeight: 21 },
+  outcomeRoute: { color: COLORS.textSecondary, fontWeight: '800' },
+  outcomeNote: { color: COLORS.textSecondary, fontSize: FONT_SIZE.sm, lineHeight: 20 },
   rowReverse: { flexDirection: 'row-reverse' },
   textRight: { textAlign: 'right', writingDirection: 'rtl' },
   connectionBanner: {
@@ -626,7 +864,16 @@ const styles = StyleSheet.create({
   connectionWarning: { backgroundColor: COLORS.warningLight },
   connectionMuted: { backgroundColor: COLORS.borderLight },
   connectionDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: COLORS.textSecondary },
+  connectionDotLive: { backgroundColor: COLORS.success },
+  connectionDotWarning: { backgroundColor: COLORS.warning },
   connectionText: { flex: 1, color: COLORS.text, fontWeight: '800' },
+  heroStatusRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.md, marginTop: SPACING.md },
+  heroStatusCopy: { flex: 1 },
+  phaseIcon: { width: 52, height: 52, borderRadius: 26, backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center' },
+  phaseIconText: { color: COLORS.text, fontSize: FONT_SIZE.xxl, fontWeight: '900' },
+  nextStopPill: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm, minHeight: 40, marginTop: SPACING.md, paddingHorizontal: SPACING.md, borderRadius: RADIUS.md, backgroundColor: COLORS.primaryLight },
+  nextStopIcon: { color: COLORS.primaryDark, fontSize: FONT_SIZE.xs },
+  nextStopText: { flex: 1, color: COLORS.text, fontSize: FONT_SIZE.sm, fontWeight: '800' },
   statusLabel: { color: COLORS.textMuted, fontSize: FONT_SIZE.xs, fontWeight: '800', letterSpacing: 1 },
   statusValue: { color: COLORS.text, fontSize: FONT_SIZE.xl, fontWeight: '800', marginTop: 2 },
   message: { color: COLORS.textSecondary, marginTop: SPACING.xs, lineHeight: 21 },
@@ -641,8 +888,8 @@ const styles = StyleSheet.create({
   callButton: { minHeight: 44, justifyContent: 'center', alignSelf: 'flex-start', marginTop: SPACING.sm },
   callButtonRtl: { alignSelf: 'flex-end' },
   callLink: { color: COLORS.info, fontWeight: '800' },
-  metricRow: { flexDirection: 'row', gap: SPACING.lg, marginTop: SPACING.sm },
-  metric: { flex: 1 },
+  metricRow: { flexDirection: 'row', gap: SPACING.sm, marginTop: SPACING.sm },
+  metric: { flex: 1, minHeight: 82, borderRadius: RADIUS.md, backgroundColor: COLORS.background, padding: SPACING.md, justifyContent: 'center' },
   metricValue: { color: COLORS.text, fontSize: FONT_SIZE.xl, fontWeight: '900' },
   metricLabel: { color: COLORS.textMuted, fontSize: FONT_SIZE.xs, marginTop: 2 },
   stopRow: { flexDirection: 'row', alignItems: 'flex-start', gap: SPACING.sm, paddingVertical: SPACING.sm, minHeight: 44 },
@@ -658,7 +905,7 @@ const styles = StyleSheet.create({
   outstandingTitle: { color: COLORS.danger, fontWeight: '800', marginBottom: SPACING.xs },
   outstandingLine: { color: COLORS.text, fontSize: FONT_SIZE.sm },
   skeletonContainer: { flex: 1, backgroundColor: COLORS.background },
-  skeletonMap: { height: '45%', backgroundColor: COLORS.border },
+  skeletonMap: { height: '43%', backgroundColor: COLORS.border },
   skeletonContent: { padding: SPACING.lg, gap: SPACING.md },
   skeletonBlock: { height: 96, borderRadius: RADIUS.xl, backgroundColor: COLORS.borderLight },
   skeletonTitle: { height: 44 },

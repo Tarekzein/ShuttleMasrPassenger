@@ -2,6 +2,7 @@ import type { Booking, TripTracking, TripTrackingV2 } from '../types/passenger';
 import {
   acceptLocationUpdate,
   classifyRevision,
+  decodeEncodedPolyline,
   isBookingTrackingEligible,
   isJourneyEventV2,
   isTripTrackingV2,
@@ -66,6 +67,25 @@ const v2: TripTrackingV2 = {
 };
 
 describe('tracking contract normalization', () => {
+  it('decodes an encoded driver route when coordinate geometry is omitted', () => {
+    expect(decodeEncodedPolyline('_p~iF~ps|U_ulLnnqC_mqNvxq`@')).toEqual([
+      { latitude: 38.5, longitude: -120.2 },
+      { latitude: 40.7, longitude: -120.95 },
+      { latitude: 43.252, longitude: -126.453 },
+    ]);
+    expect(decodeEncodedPolyline('?')).toEqual([]);
+
+    const snapshot = normalizeTrackingSnapshot({
+      ...v2,
+      route: {
+        ...v2.route,
+        coordinates: [],
+        encodedPolyline: '_p~iF~ps|U_ulLnnqC_mqNvxq`@',
+      },
+    });
+    expect(snapshot.route.coordinates).toHaveLength(3);
+  });
+
   it('normalizes the passenger v2 projection and derives pickup/drop-off flags', () => {
     const snapshot = normalizeTrackingSnapshot(v2);
     expect(snapshot.apiVersion).toBe(2);
